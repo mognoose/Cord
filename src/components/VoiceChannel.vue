@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, ref, onMounted, onUnmounted } from 'vue'
+import { computed, watch, ref, onUnmounted } from 'vue'
 import { useServerStore } from '../stores/server'
 import { useVoiceStore } from '../stores/voice'
 import Avatar from './Avatar.vue'
@@ -33,7 +33,7 @@ watch(
         const audio = new Audio()
         audio.srcObject = stream
         audio.autoplay = true
-        audio.playsInline = true
+        audio.setAttribute('playsinline', 'true')
         
         audio.play().catch(err => {
           console.error('Failed to play audio:', err)
