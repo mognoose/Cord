@@ -1,4 +1,4 @@
-import { ref, set, onValue, off, push, onChildAdded, serverTimestamp } from 'firebase/database'
+import { ref, set, off, push, onChildAdded, serverTimestamp } from 'firebase/database'
 import { rtdb } from './config'
 
 export interface SignalingMessage {
@@ -25,7 +25,7 @@ export const subscribeToSignaling = (
 ) => {
   const signalingRef = ref(rtdb, `signaling/${serverId}/${channelId}`)
   
-  const handler = onChildAdded(signalingRef, (snapshot) => {
+  onChildAdded(signalingRef, (snapshot) => {
     const message = snapshot.val() as SignalingMessage
     if (message.to === userId) {
       callback(message)

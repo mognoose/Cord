@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { onMounted, watch, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useServerStore } from '../stores/server'
 import ChannelList from '../components/ChannelList.vue'
 
 const route = useRoute()
-const router = useRouter()
 const serverStore = useServerStore()
 
 const hasChannelRoute = computed(() => !!route.params.channelId)

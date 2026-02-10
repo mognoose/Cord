@@ -6,7 +6,7 @@ import {
   updateVoiceState,
   subscribeToVoiceChannel 
 } from '../firebase/presence'
-import { sendSignal, subscribeToSignaling, cleanupSignaling, type SignalingMessage } from '../firebase/signaling'
+import { sendSignal, subscribeToSignaling, type SignalingMessage } from '../firebase/signaling'
 import { useAuthStore } from './auth'
 import { useServerStore } from './server'
 
@@ -73,7 +73,7 @@ export const useVoiceStore = defineStore('voice', () => {
           connectedUsers.value = users
           
           // Setup peer connections for new users
-          for (const [peerId, userData] of Object.entries(users)) {
+          for (const [peerId] of Object.entries(users)) {
             if (peerId !== authStore.user!.uid && !peerConnections.value.has(peerId)) {
               await createPeerConnection(peerId)
             }

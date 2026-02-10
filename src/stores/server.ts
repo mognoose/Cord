@@ -8,7 +8,6 @@ import {
   leaveServer, 
   deleteServer,
   createChannel,
-  getChannels,
   subscribeToChannels,
   deleteChannel
 } from '../firebase/firestore'
