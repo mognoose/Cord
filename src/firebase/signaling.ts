@@ -17,7 +17,6 @@ export const sendSignal = (serverId: string, channelId: string, message: Signali
     ...message,
     timestamp: Date.now()
   })
-  console.log(`[Signaling] Sent ${message.type} to ${message.to}`)
 }
 
 export const subscribeToSignaling = (
@@ -36,14 +35,11 @@ export const subscribeToSignaling = (
     
     // Ignore old messages (created before we subscribed)
     if (message.timestamp && message.timestamp < subscribeTime - 5000) {
-      console.log(`[Signaling] Ignoring old message from ${message.from}`)
-      // Clean up old message
       remove(snapshot.ref)
       return
     }
     
     if (message.to === userId) {
-      console.log(`[Signaling] Received ${message.type} from ${message.from}`)
       callback(message)
       // Remove processed message to keep database clean
       remove(snapshot.ref)

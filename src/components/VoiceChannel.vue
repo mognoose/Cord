@@ -116,18 +116,6 @@ const streamingPeers = computed(() => {
 const hasStreamingUser = computed(() => {
   return Object.values(voiceStore.connectedUsers).some((user: any) => user.streaming)
 })
-
-// Debug: log streaming info
-watch(
-  () => voiceStore.remoteStreams,
-  (streams) => {
-    console.log('Remote streams updated, checking for video tracks...')
-    streams.forEach((stream, peerId) => {
-      console.log(`Peer ${peerId}: ${stream.getVideoTracks().length} video tracks, ${stream.getAudioTracks().length} audio tracks`)
-    })
-  },
-  { deep: true }
-)
 </script>
 
 <template>
@@ -176,7 +164,6 @@ watch(
             v-for="(user, odUserId) in voiceStore.connectedUsers" 
             :key="odUserId" 
             class="voice-user"
-            :class="{ 'is-streaming': user.streaming }"
           >
             <Avatar 
               :url="user.avatarUrl" 
@@ -348,27 +335,6 @@ watch(
   flex-direction: column;
   align-items: center;
   gap: 8px;
-}
-
-.voice-user.is-streaming {
-  position: relative;
-}
-
-.voice-user.is-streaming::after {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  right: -4px;
-  bottom: -4px;
-  border: 2px solid var(--danger);
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 .user-name {

@@ -219,22 +219,14 @@ export const useVoiceStore = defineStore('voice', () => {
         streaming: true
       })
       
-      console.log('Starting screen share, adding tracks to peers...')
-      
       // Add screen tracks to peer connections and renegotiate
       for (const [peerId, { connection }] of peerConnections.value) {
-        console.log(`Adding screen tracks to peer ${peerId}`)
-        
         // Add tracks
-        const senders: RTCRtpSender[] = []
         screenStream.value!.getTracks().forEach(track => {
-          console.log(`Adding ${track.kind} track to peer ${peerId}`)
-          const sender = connection.addTrack(track, screenStream.value!)
-          senders.push(sender)
+          connection.addTrack(track, screenStream.value!)
         })
         
-        // Always renegotiate after adding tracks - the one adding tracks initiates
-        console.log(`Creating offer for peer ${peerId} after adding screen tracks`)
+        // Always renegotiate after adding tracks
         const offer = await connection.createOffer()
         await connection.setLocalDescription(offer)
         sendSignal(serverStore.currentServer!.id, currentVoiceChannel.value!, {
@@ -290,11 +282,15 @@ export const useVoiceStore = defineStore('voice', () => {
     
     // Log connection state for debugging
     connection.onconnectionstatechange = () => {
-      console.log(`Peer ${peerId} connection state:`, connection.connectionState)
+      if (connection.connectionState === 'failed') {
+        console.error(`Peer ${peerId} connection failed`)
+      }
     }
     
     connection.oniceconnectionstatechange = () => {
-      console.log(`Peer ${peerId} ICE state:`, connection.iceConnectionState)
+      if (connection.iceConnectionState === 'failed') {
+        console.error(`Peer ${peerId} ICE connection failed`)
+      }
     }
 
     // Handle ICE candidates
@@ -311,34 +307,26 @@ export const useVoiceStore = defineStore('voice', () => {
     
     // Handle remote tracks
     connection.ontrack = (event) => {
-      console.log(`Received track from ${peerId}:`, event.track.kind, 'readyState:', event.track.readyState)
-      console.log('Track streams:', event.streams.length)
-      
       let stream = remoteStreams.value.get(peerId)
       if (!stream) {
         stream = new MediaStream()
         remoteStreams.value.set(peerId, stream)
-        console.log(`Created new MediaStream for peer ${peerId}`)
       }
       
       // Check if track already exists in stream
       const existingTrack = stream.getTracks().find(t => t.id === event.track.id)
       if (!existingTrack) {
         stream.addTrack(event.track)
-        console.log(`Added ${event.track.kind} track to stream for peer ${peerId}`)
       }
       
       // Force reactivity update
       remoteStreams.value = new Map(remoteStreams.value)
-      
-      console.log(`Peer ${peerId} stream now has ${stream.getAudioTracks().length} audio, ${stream.getVideoTracks().length} video tracks`)
     }
     
     peerConnections.value.set(peerId, { peerId, connection, pendingCandidates: [] })
     
     // Create offer if we have lower ID (to prevent both sides creating offers)
     if (authStore.user.uid < peerId) {
-      console.log(`Creating offer for peer ${peerId}`)
       const offer = await connection.createOffer()
       await connection.setLocalDescription(offer)
       
@@ -348,8 +336,6 @@ export const useVoiceStore = defineStore('voice', () => {
         to: peerId,
         payload: offer
       })
-    } else {
-      console.log(`Waiting for offer from peer ${peerId}`)
     }
   }
 
@@ -381,12 +367,8 @@ export const useVoiceStore = defineStore('voice', () => {
     
     switch (message.type) {
       case 'offer':
-        console.log(`Processing offer from ${message.from}, connection state: ${connection.signalingState}`)
-        
         // Handle renegotiation - need to handle "have-local-offer" state
         if (connection.signalingState === 'have-local-offer') {
-          // Rollback our local offer first (we'll accept theirs)
-          console.log('Rolling back local offer to accept remote offer')
           await connection.setLocalDescription({ type: 'rollback' })
         }
         
@@ -395,7 +377,6 @@ export const useVoiceStore = defineStore('voice', () => {
         // Process any buffered ICE candidates
         const peer1 = peerConnections.value.get(message.from)
         if (peer1 && peer1.pendingCandidates.length > 0) {
-          console.log(`Adding ${peer1.pendingCandidates.length} buffered ICE candidates`)
           for (const candidate of peer1.pendingCandidates) {
             await connection.addIceCandidate(candidate)
           }
@@ -404,7 +385,6 @@ export const useVoiceStore = defineStore('voice', () => {
         
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
-        console.log(`Sending answer to ${message.from}`)
         
         sendSignal(serverStore.currentServer.id, currentVoiceChannel.value, {
           type: 'answer',
@@ -415,13 +395,11 @@ export const useVoiceStore = defineStore('voice', () => {
         break
         
       case 'answer':
-        console.log(`Processing answer from ${message.from}`)
         await connection.setRemoteDescription(message.payload as RTCSessionDescriptionInit)
         
         // Process any buffered ICE candidates
         const peer2 = peerConnections.value.get(message.from)
         if (peer2 && peer2.pendingCandidates.length > 0) {
-          console.log(`Adding ${peer2.pendingCandidates.length} buffered ICE candidates`)
           for (const candidate of peer2.pendingCandidates) {
             await connection.addIceCandidate(candidate)
           }
@@ -432,13 +410,11 @@ export const useVoiceStore = defineStore('voice', () => {
       case 'ice-candidate':
         // Buffer ICE candidates if remote description not set yet
         if (!connection.remoteDescription) {
-          console.log(`Buffering ICE candidate from ${message.from}`)
           const peer3 = peerConnections.value.get(message.from)
           if (peer3) {
             peer3.pendingCandidates.push(message.payload as RTCIceCandidateInit)
           }
         } else {
-          console.log(`Adding ICE candidate from ${message.from}`)
           await connection.addIceCandidate(message.payload as RTCIceCandidateInit)
         }
         break
