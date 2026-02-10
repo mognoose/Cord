@@ -98,16 +98,36 @@ const getVideoStream = (peerId: string) => {
   return null
 }
 
-// Check if any peer is streaming video
+// Check if any peer is streaming video (reactive to remoteStreams changes)
 const streamingPeers = computed(() => {
   const peers: string[] = []
-  voiceStore.remoteStreams.forEach((stream, peerId) => {
-    if (stream.getVideoTracks().length > 0) {
-      peers.push(peerId)
-    }
-  })
+  const streams = voiceStore.remoteStreams
+  if (streams.size > 0) {
+    streams.forEach((stream, peerId) => {
+      if (stream && stream.getVideoTracks().length > 0) {
+        peers.push(peerId)
+      }
+    })
+  }
   return peers
 })
+
+// Check if any user has streaming flag set (from presence)
+const hasStreamingUser = computed(() => {
+  return Object.values(voiceStore.connectedUsers).some((user: any) => user.streaming)
+})
+
+// Debug: log streaming info
+watch(
+  () => voiceStore.remoteStreams,
+  (streams) => {
+    console.log('Remote streams updated, checking for video tracks...')
+    streams.forEach((stream, peerId) => {
+      console.log(`Peer ${peerId}: ${stream.getVideoTracks().length} video tracks, ${stream.getAudioTracks().length} audio tracks`)
+    })
+  },
+  { deep: true }
+)
 </script>
 
 <template>
@@ -156,6 +176,7 @@ const streamingPeers = computed(() => {
             v-for="(user, odUserId) in voiceStore.connectedUsers" 
             :key="odUserId" 
             class="voice-user"
+            :class="{ 'is-streaming': user.streaming }"
           >
             <Avatar 
               :url="user.avatarUrl" 
@@ -170,9 +191,14 @@ const streamingPeers = computed(() => {
               <svg v-if="user.deafened" viewBox="0 0 24 24" width="16" height="16" class="deafened">
                 <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z"/>
               </svg>
-              <span v-if="user.streaming" class="streaming">LIVE</span>
+              <span v-if="user.streaming" class="streaming-badge">LIVE</span>
             </div>
           </div>
+        </div>
+        
+        <!-- Show message when someone is streaming but video not received yet -->
+        <div v-if="hasStreamingUser && streamingPeers.length === 0 && !voiceStore.isStreaming" class="stream-notice">
+          <span>📺 Someone is streaming - video should appear shortly...</span>
         </div>
         
         <div class="voice-controls">
@@ -324,6 +350,27 @@ const streamingPeers = computed(() => {
   gap: 8px;
 }
 
+.voice-user.is-streaming {
+  position: relative;
+}
+
+.voice-user.is-streaming::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 2px solid var(--danger);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .user-name {
   font-weight: 600;
   font-size: 14px;
@@ -339,13 +386,20 @@ const streamingPeers = computed(() => {
   color: var(--danger);
 }
 
-.streaming {
+.streaming-badge {
   background-color: var(--danger);
   color: white;
   font-size: 10px;
   font-weight: 700;
   padding: 2px 4px;
   border-radius: 3px;
+}
+
+.stream-notice {
+  padding: 12px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
 }
 
 .voice-controls {
