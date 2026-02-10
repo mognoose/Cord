@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, ref, onMounted, onUnmounted } from 'vue'
 import { useServerStore } from '../stores/server'
 import { useVoiceStore } from '../stores/voice'
 import Avatar from './Avatar.vue'
 
 const serverStore = useServerStore()
 const voiceStore = useVoiceStore()
+
+const audioElements = ref<Map<string, HTMLAudioElement>>(new Map())
 
 const isInChannel = computed(() => 
   voiceStore.currentVoiceChannel === serverStore.currentChannel?.id
@@ -18,6 +20,94 @@ const handleJoinLeave = () => {
     voiceStore.joinChannel(serverStore.currentChannel.id)
   }
 }
+
+// Watch for remote streams and play audio
+watch(
+  () => voiceStore.remoteStreams,
+  (streams) => {
+    console.log('Remote streams updated:', streams.size)
+    
+    // Create audio elements for new streams
+    streams.forEach((stream, peerId) => {
+      if (!audioElements.value.has(peerId)) {
+        const audio = new Audio()
+        audio.srcObject = stream
+        audio.autoplay = true
+        audio.playsInline = true
+        
+        audio.play().catch(err => {
+          console.error('Failed to play audio:', err)
+        })
+        
+        audioElements.value.set(peerId, audio)
+        console.log(`Created audio element for peer ${peerId}`)
+      } else {
+        // Update existing audio element if stream changed
+        const audio = audioElements.value.get(peerId)!
+        if (audio.srcObject !== stream) {
+          audio.srcObject = stream
+          audio.play().catch(err => {
+            console.error('Failed to play updated audio:', err)
+          })
+        }
+      }
+    })
+    
+    // Remove audio elements for disconnected peers
+    audioElements.value.forEach((audio, peerId) => {
+      if (!streams.has(peerId)) {
+        audio.pause()
+        audio.srcObject = null
+        audioElements.value.delete(peerId)
+        console.log(`Removed audio element for peer ${peerId}`)
+      }
+    })
+  },
+  { deep: true, immediate: true }
+)
+
+// Cleanup on unmount
+onUnmounted(() => {
+  audioElements.value.forEach((audio) => {
+    audio.pause()
+    audio.srcObject = null
+  })
+  audioElements.value.clear()
+})
+
+// Custom directive for video srcObject
+const vSrcObject = {
+  mounted: (el: HTMLVideoElement, binding: { value: MediaStream | null }) => {
+    if (binding.value) {
+      el.srcObject = binding.value
+    }
+  },
+  updated: (el: HTMLVideoElement, binding: { value: MediaStream | null }) => {
+    if (el.srcObject !== binding.value) {
+      el.srcObject = binding.value
+    }
+  }
+}
+
+// Get video stream for a peer (if they're screen sharing)
+const getVideoStream = (peerId: string) => {
+  const stream = voiceStore.remoteStreams.get(peerId)
+  if (stream && stream.getVideoTracks().length > 0) {
+    return stream
+  }
+  return null
+}
+
+// Check if any peer is streaming video
+const streamingPeers = computed(() => {
+  const peers: string[] = []
+  voiceStore.remoteStreams.forEach((stream, peerId) => {
+    if (stream.getVideoTracks().length > 0) {
+      peers.push(peerId)
+    }
+  })
+  return peers
+})
 </script>
 
 <template>
@@ -38,6 +128,29 @@ const handleJoinLeave = () => {
       </div>
       
       <div v-else class="voice-connected">
+        <!-- Screen share display area -->
+        <div v-if="streamingPeers.length > 0 || voiceStore.isStreaming" class="stream-area">
+          <!-- Show own screen share preview -->
+          <video 
+            v-if="voiceStore.isStreaming && voiceStore.screenStream"
+            v-src-object="voiceStore.screenStream"
+            autoplay
+            muted
+            playsinline
+            class="stream-video self"
+          ></video>
+          
+          <!-- Show remote screen shares -->
+          <video
+            v-for="peerId in streamingPeers"
+            :key="peerId"
+            v-src-object="getVideoStream(peerId)"
+            autoplay
+            playsinline
+            class="stream-video"
+          ></video>
+        </div>
+        
         <div class="voice-users">
           <div 
             v-for="(user, odUserId) in voiceStore.connectedUsers" 
@@ -166,6 +279,32 @@ const handleJoinLeave = () => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.stream-area {
+  flex: 1;
+  min-height: 200px;
+  max-height: 60vh;
+  display: flex;
+  gap: 10px;
+  padding: 20px;
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  margin: 20px;
+  margin-bottom: 0;
+}
+
+.stream-video {
+  flex: 1;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background-color: black;
+  border-radius: 8px;
+}
+
+.stream-video.self {
+  opacity: 0.8;
 }
 
 .voice-users {

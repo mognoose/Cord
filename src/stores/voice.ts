@@ -35,7 +35,25 @@ export const useVoiceStore = defineStore('voice', () => {
 
   const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    // Free TURN servers for NAT traversal (consider setting up your own for production)
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 
   const joinChannel = async (channelId: string) => {
@@ -200,12 +218,24 @@ export const useVoiceStore = defineStore('voice', () => {
         streaming: true
       })
       
-      // Add screen tracks to peer connections
-      peerConnections.value.forEach(({ connection }) => {
+      // Add screen tracks to peer connections and renegotiate
+      for (const [peerId, { connection }] of peerConnections.value) {
         screenStream.value!.getTracks().forEach(track => {
           connection.addTrack(track, screenStream.value!)
         })
-      })
+        
+        // Renegotiate connection after adding tracks
+        if (authStore.user!.uid < peerId) {
+          const offer = await connection.createOffer()
+          await connection.setLocalDescription(offer)
+          sendSignal(serverStore.currentServer!.id, currentVoiceChannel.value!, {
+            type: 'offer',
+            from: authStore.user!.uid,
+            to: peerId,
+            payload: offer
+          })
+        }
+      }
       
       // Handle stream end
       screenStream.value.getVideoTracks()[0].onended = () => {
@@ -250,6 +280,15 @@ export const useVoiceStore = defineStore('voice', () => {
       })
     }
     
+    // Log connection state for debugging
+    connection.onconnectionstatechange = () => {
+      console.log(`Peer ${peerId} connection state:`, connection.connectionState)
+    }
+    
+    connection.oniceconnectionstatechange = () => {
+      console.log(`Peer ${peerId} ICE state:`, connection.iceConnectionState)
+    }
+
     // Handle ICE candidates
     connection.onicecandidate = (event) => {
       if (event.candidate) {
@@ -264,10 +303,17 @@ export const useVoiceStore = defineStore('voice', () => {
     
     // Handle remote tracks
     connection.ontrack = (event) => {
-      const stream = event.streams[0]
-      if (stream) {
+      console.log(`Received track from ${peerId}:`, event.track.kind)
+      let stream = remoteStreams.value.get(peerId)
+      if (!stream) {
+        stream = new MediaStream()
         remoteStreams.value.set(peerId, stream)
+        // Force reactivity update
+        remoteStreams.value = new Map(remoteStreams.value)
       }
+      stream.addTrack(event.track)
+      // Force reactivity update again after adding track
+      remoteStreams.value = new Map(remoteStreams.value)
     }
     
     peerConnections.value.set(peerId, { peerId, connection })
