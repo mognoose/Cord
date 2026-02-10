@@ -53,7 +53,8 @@ export const joinVoiceChannel = (serverId: string, channelId: string, userId: st
   onDisconnect(voiceRef).remove()
   
   set(voiceRef, {
-    ...userData,
+    username: userData.username,
+    ...(userData.avatarUrl && { avatarUrl: userData.avatarUrl }),
     joinedAt: serverTimestamp(),
     muted: false,
     deafened: false,
