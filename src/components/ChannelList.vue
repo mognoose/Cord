@@ -10,6 +10,8 @@ const serverStore = useServerStore()
 const voiceStore = useVoiceStore()
 
 const showCreateModal = ref(false)
+const showServerMenu = ref(false)
+const copied = ref(false)
 
 const selectChannel = (channelId: string) => {
   if (!serverStore.currentServer) return
@@ -20,12 +22,36 @@ const joinVoice = (channelId: string) => {
   selectChannel(channelId)
   voiceStore.joinChannel(channelId)
 }
+
+const copyInviteCode = () => {
+  if (!serverStore.currentServer?.inviteCode) return
+  navigator.clipboard.writeText(serverStore.currentServer.inviteCode)
+  copied.value = true
+  setTimeout(() => copied.value = false, 2000)
+  showServerMenu.value = false
+}
 </script>
 
 <template>
   <div class="channel-list" v-if="serverStore.currentServer">
-    <div class="server-header">
+    <div class="server-header" @click="showServerMenu = !showServerMenu">
       <h3>{{ serverStore.currentServer.name }}</h3>
+      <svg viewBox="0 0 24 24" width="18" height="18" :class="{ rotated: showServerMenu }">
+        <path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+      </svg>
+    </div>
+    
+    <!-- Server Menu Dropdown -->
+    <div v-if="showServerMenu" class="server-menu">
+      <button class="menu-item" @click="copyInviteCode">
+        <svg viewBox="0 0 24 24" width="18" height="18">
+          <path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+        </svg>
+        <span>{{ copied ? 'Copied!' : 'Copy Invite Code' }}</span>
+      </button>
+      <div class="invite-code" v-if="serverStore.currentServer.inviteCode">
+        {{ serverStore.currentServer.inviteCode }}
+      </div>
     </div>
     
     <div class="channels">
@@ -107,6 +133,22 @@ const joinVoice = (channelId: string) => {
   align-items: center;
   border-bottom: 1px solid var(--bg-tertiary);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  justify-content: space-between;
+}
+
+.server-header:hover {
+  background-color: var(--bg-modifier-hover);
+}
+
+.server-header svg {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.server-header svg.rotated {
+  transform: rotate(180deg);
 }
 
 .server-header h3 {
@@ -115,6 +157,43 @@ const joinVoice = (channelId: string) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.server-menu {
+  background-color: var(--bg-tertiary);
+  padding: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background-color: var(--brand-primary);
+  color: white;
+}
+
+.invite-code {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: var(--bg-primary);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  text-align: center;
+  color: var(--text-primary);
+  user-select: all;
 }
 
 .channels {

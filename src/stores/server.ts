@@ -5,6 +5,7 @@ import {
   getServer, 
   getUserServers, 
   joinServer, 
+  getServerByInviteCode,
   leaveServer, 
   deleteServer,
   createChannel,
@@ -100,15 +101,33 @@ export const useServerStore = defineStore('server', () => {
     }
   }
 
-  const joinExistingServer = async (inviteCode: string) => {
+  const joinExistingServer = async (inviteCode: string): Promise<boolean> => {
     const authStore = useAuthStore()
-    if (!authStore.user) return
+    if (!authStore.user) return false
     
-    // Find server by invite code
-    const server = servers.value.find(s => s.inviteCode === inviteCode)
-    if (server) {
+    try {
+      loading.value = true
+      // Find server by invite code in Firestore
+      const server = await getServerByInviteCode(inviteCode)
+      if (!server) {
+        error.value = 'Invalid invite code'
+        return false
+      }
+      
+      // Check if already a member
+      if (server.members.includes(authStore.user.uid)) {
+        error.value = 'You are already a member of this server'
+        return false
+      }
+      
       await joinServer(server.id, authStore.user.uid)
       await fetchServers()
+      return true
+    } catch (e: any) {
+      error.value = e.message
+      return false
+    } finally {
+      loading.value = false
     }
   }
 

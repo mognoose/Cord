@@ -89,6 +89,17 @@ export const joinServer = async (serverId: string, userId: string) => {
   })
 }
 
+export const getServerByInviteCode = async (inviteCode: string): Promise<Server | null> => {
+  const q = query(
+    collection(db, 'servers'),
+    where('inviteCode', '==', inviteCode)
+  )
+  const querySnapshot = await getDocs(q)
+  if (querySnapshot.empty) return null
+  const doc = querySnapshot.docs[0]
+  return { id: doc.id, ...doc.data() } as Server
+}
+
 export const leaveServer = async (serverId: string, userId: string) => {
   const serverRef = doc(db, 'servers', serverId)
   await updateDoc(serverRef, {
