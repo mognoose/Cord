@@ -219,23 +219,30 @@ export const useVoiceStore = defineStore('voice', () => {
         streaming: true
       })
       
+      console.log('Starting screen share, adding tracks to peers...')
+      
       // Add screen tracks to peer connections and renegotiate
       for (const [peerId, { connection }] of peerConnections.value) {
+        console.log(`Adding screen tracks to peer ${peerId}`)
+        
+        // Add tracks
+        const senders: RTCRtpSender[] = []
         screenStream.value!.getTracks().forEach(track => {
-          connection.addTrack(track, screenStream.value!)
+          console.log(`Adding ${track.kind} track to peer ${peerId}`)
+          const sender = connection.addTrack(track, screenStream.value!)
+          senders.push(sender)
         })
         
-        // Renegotiate connection after adding tracks
-        if (authStore.user!.uid < peerId) {
-          const offer = await connection.createOffer()
-          await connection.setLocalDescription(offer)
-          sendSignal(serverStore.currentServer!.id, currentVoiceChannel.value!, {
-            type: 'offer',
-            from: authStore.user!.uid,
-            to: peerId,
-            payload: offer
-          })
-        }
+        // Always renegotiate after adding tracks - the one adding tracks initiates
+        console.log(`Creating offer for peer ${peerId} after adding screen tracks`)
+        const offer = await connection.createOffer()
+        await connection.setLocalDescription(offer)
+        sendSignal(serverStore.currentServer!.id, currentVoiceChannel.value!, {
+          type: 'offer',
+          from: authStore.user!.uid,
+          to: peerId,
+          payload: offer
+        })
       }
       
       // Handle stream end
@@ -304,17 +311,27 @@ export const useVoiceStore = defineStore('voice', () => {
     
     // Handle remote tracks
     connection.ontrack = (event) => {
-      console.log(`Received track from ${peerId}:`, event.track.kind)
+      console.log(`Received track from ${peerId}:`, event.track.kind, 'readyState:', event.track.readyState)
+      console.log('Track streams:', event.streams.length)
+      
       let stream = remoteStreams.value.get(peerId)
       if (!stream) {
         stream = new MediaStream()
         remoteStreams.value.set(peerId, stream)
-        // Force reactivity update
-        remoteStreams.value = new Map(remoteStreams.value)
+        console.log(`Created new MediaStream for peer ${peerId}`)
       }
-      stream.addTrack(event.track)
-      // Force reactivity update again after adding track
+      
+      // Check if track already exists in stream
+      const existingTrack = stream.getTracks().find(t => t.id === event.track.id)
+      if (!existingTrack) {
+        stream.addTrack(event.track)
+        console.log(`Added ${event.track.kind} track to stream for peer ${peerId}`)
+      }
+      
+      // Force reactivity update
       remoteStreams.value = new Map(remoteStreams.value)
+      
+      console.log(`Peer ${peerId} stream now has ${stream.getAudioTracks().length} audio, ${stream.getVideoTracks().length} video tracks`)
     }
     
     peerConnections.value.set(peerId, { peerId, connection, pendingCandidates: [] })
@@ -364,7 +381,15 @@ export const useVoiceStore = defineStore('voice', () => {
     
     switch (message.type) {
       case 'offer':
-        console.log(`Processing offer from ${message.from}`)
+        console.log(`Processing offer from ${message.from}, connection state: ${connection.signalingState}`)
+        
+        // Handle renegotiation - need to handle "have-local-offer" state
+        if (connection.signalingState === 'have-local-offer') {
+          // Rollback our local offer first (we'll accept theirs)
+          console.log('Rolling back local offer to accept remote offer')
+          await connection.setLocalDescription({ type: 'rollback' })
+        }
+        
         await connection.setRemoteDescription(message.payload as RTCSessionDescriptionInit)
         
         // Process any buffered ICE candidates
@@ -379,6 +404,7 @@ export const useVoiceStore = defineStore('voice', () => {
         
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
+        console.log(`Sending answer to ${message.from}`)
         
         sendSignal(serverStore.currentServer.id, currentVoiceChannel.value, {
           type: 'answer',
