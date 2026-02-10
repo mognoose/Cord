@@ -1,4 +1,4 @@
-import { ref, set, onValue, onDisconnect, serverTimestamp, off } from 'firebase/database'
+import { ref, set, onValue, onDisconnect, serverTimestamp, off, update } from 'firebase/database'
 import { rtdb } from './config'
 
 export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline'
@@ -74,8 +74,6 @@ export const updateVoiceState = (
   state: { muted?: boolean; deafened?: boolean; streaming?: boolean }
 ) => {
   const voiceRef = ref(rtdb, `voice/${serverId}/${channelId}/${userId}`)
-  // Use update for partial updates
-  const { update } = require('firebase/database')
   update(voiceRef, state)
 }
 
