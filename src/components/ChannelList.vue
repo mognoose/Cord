@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useServerStore } from '../stores/server'
 import { useVoiceStore } from '../stores/voice'
+import { subscribeToVoiceChannel } from '../firebase/presence'
 import CreateChannelModal from './CreateChannelModal.vue'
 
 const router = useRouter()
@@ -12,6 +13,45 @@ const voiceStore = useVoiceStore()
 const showCreateModal = ref(false)
 const showServerMenu = ref(false)
 const copied = ref(false)
+
+// Track users in ALL voice channels
+const voiceChannelUsers = ref<Record<string, Record<string, any>>>({})
+const unsubscribers = ref<(() => void)[]>([])
+
+// Subscribe to voice presence for all voice channels when channels change
+watch(
+  () => [serverStore.currentServer?.id, serverStore.voiceChannels],
+  () => {
+    // Clean up old subscriptions
+    unsubscribers.value.forEach(unsub => unsub())
+    unsubscribers.value = []
+    voiceChannelUsers.value = {}
+    
+    if (!serverStore.currentServer) return
+    
+    // Subscribe to each voice channel's presence
+    for (const channel of serverStore.voiceChannels) {
+      const unsub = subscribeToVoiceChannel(
+        serverStore.currentServer.id,
+        channel.id,
+        (users) => {
+          voiceChannelUsers.value[channel.id] = users
+        }
+      )
+      unsubscribers.value.push(unsub)
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  unsubscribers.value.forEach(unsub => unsub())
+})
+
+// Get users for a specific channel
+const getChannelUsers = (channelId: string) => {
+  return voiceChannelUsers.value[channelId] || {}
+}
 
 const selectChannel = (channelId: string) => {
   if (!serverStore.currentServer) return
@@ -102,11 +142,12 @@ const copyInviteCode = () => {
           </svg>
           <span class="channel-name">{{ channel.name }}</span>
           
-          <!-- Show connected users -->
-          <div v-if="voiceStore.currentVoiceChannel === channel.id && Object.keys(voiceStore.connectedUsers).length > 0" class="voice-users">
-            <div v-for="(user, odUserId) in voiceStore.connectedUsers" :key="odUserId" class="voice-user">
-              <span class="user-indicator"></span>
+          <!-- Show connected users for this voice channel -->
+          <div v-if="Object.keys(getChannelUsers(channel.id)).length > 0" class="voice-users">
+            <div v-for="(user, odUserId) in getChannelUsers(channel.id)" :key="odUserId" class="voice-user">
+              <span class="user-indicator" :class="{ speaking: !user.muted }"></span>
               <span class="user-name">{{ user.username }}</span>
+              <span v-if="user.muted" class="user-muted">🔇</span>
             </div>
           </div>
         </div>
@@ -241,6 +282,7 @@ const copyInviteCode = () => {
 
 .channel-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
@@ -296,6 +338,21 @@ const copyInviteCode = () => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background-color: var(--text-muted);
+}
+
+.user-indicator.speaking {
   background-color: var(--status-online);
+}
+
+.user-muted {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.user-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

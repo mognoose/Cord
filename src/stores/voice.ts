@@ -15,6 +15,7 @@ interface PeerConnection {
   connection: RTCPeerConnection
   audioStream?: MediaStream
   videoStream?: MediaStream
+  pendingCandidates: RTCIceCandidateInit[]
 }
 
 export const useVoiceStore = defineStore('voice', () => {
@@ -316,10 +317,11 @@ export const useVoiceStore = defineStore('voice', () => {
       remoteStreams.value = new Map(remoteStreams.value)
     }
     
-    peerConnections.value.set(peerId, { peerId, connection })
+    peerConnections.value.set(peerId, { peerId, connection, pendingCandidates: [] })
     
     // Create offer if we have lower ID (to prevent both sides creating offers)
     if (authStore.user.uid < peerId) {
+      console.log(`Creating offer for peer ${peerId}`)
       const offer = await connection.createOffer()
       await connection.setLocalDescription(offer)
       
@@ -329,6 +331,8 @@ export const useVoiceStore = defineStore('voice', () => {
         to: peerId,
         payload: offer
       })
+    } else {
+      console.log(`Waiting for offer from peer ${peerId}`)
     }
   }
 
@@ -360,7 +364,19 @@ export const useVoiceStore = defineStore('voice', () => {
     
     switch (message.type) {
       case 'offer':
+        console.log(`Processing offer from ${message.from}`)
         await connection.setRemoteDescription(message.payload as RTCSessionDescriptionInit)
+        
+        // Process any buffered ICE candidates
+        const peer1 = peerConnections.value.get(message.from)
+        if (peer1 && peer1.pendingCandidates.length > 0) {
+          console.log(`Adding ${peer1.pendingCandidates.length} buffered ICE candidates`)
+          for (const candidate of peer1.pendingCandidates) {
+            await connection.addIceCandidate(candidate)
+          }
+          peer1.pendingCandidates = []
+        }
+        
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
         
@@ -373,11 +389,32 @@ export const useVoiceStore = defineStore('voice', () => {
         break
         
       case 'answer':
+        console.log(`Processing answer from ${message.from}`)
         await connection.setRemoteDescription(message.payload as RTCSessionDescriptionInit)
+        
+        // Process any buffered ICE candidates
+        const peer2 = peerConnections.value.get(message.from)
+        if (peer2 && peer2.pendingCandidates.length > 0) {
+          console.log(`Adding ${peer2.pendingCandidates.length} buffered ICE candidates`)
+          for (const candidate of peer2.pendingCandidates) {
+            await connection.addIceCandidate(candidate)
+          }
+          peer2.pendingCandidates = []
+        }
         break
         
       case 'ice-candidate':
-        await connection.addIceCandidate(message.payload as RTCIceCandidateInit)
+        // Buffer ICE candidates if remote description not set yet
+        if (!connection.remoteDescription) {
+          console.log(`Buffering ICE candidate from ${message.from}`)
+          const peer3 = peerConnections.value.get(message.from)
+          if (peer3) {
+            peer3.pendingCandidates.push(message.payload as RTCIceCandidateInit)
+          }
+        } else {
+          console.log(`Adding ICE candidate from ${message.from}`)
+          await connection.addIceCandidate(message.payload as RTCIceCandidateInit)
+        }
         break
     }
   }
